@@ -1,0 +1,230 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Variable.Global.iBILogID.Declare(Long,-1)
+Variable.Global.iBIRunID.Declare(Long,-1)
+Variable.UDT.uIssueDrop.Define("BIRUNID",Long,"RUNID")
+Variable.UDT.uIssueDrop.Define("PO_FROM_WO",String,"PO_FROM_WO")
+Variable.UDT.uIssueDrop.Define("SEQ",String,"SEQ")
+Variable.UDT.uIssueDrop.Define("QTY_ON_LABEL",Float,"QTY_ON_LABEL")
+Variable.UDT.uIssueDrop.Define("LBL_CREATE_DATE",Date,"LBL_CREATE_DATE")
+Variable.UDT.uIssueDrop.Define("PART",String,"PART")
+Variable.UDT.uIssueDrop.Define("LOCN",String,"LOCN")
+Variable.UDT.uIssueDrop.Define("INV_QTY_REC",Float,"INV_QTY_REC")
+Variable.UDT.uIssueDrop.Define("DESCR",String,"DESCR")
+Variable.UDT.uIssueDrop.Define("INV_UM",String,"INV_UM")
+Variable.UDT.uIssueDrop.Define("PROD_LINE",String,"PROD_LINE")
+Variable.UDT.uIssueDrop.Define("LOT",String,"LOT")
+Variable.UDT.uIssueDrop.Define("BIN",String,"BIN")
+Variable.UDT.uIssueDrop.Define("HEAT",String,"HEAT")
+Variable.UDT.uIssueDrop.Define("SERIAL",String,"SERIAL")
+Variable.UDT.uIssueDrop.Define("WO",String,"WO")
+Variable.UDT.uIssueDrop.Define("WO_SUFFIX",String,"WO_SUFFIX")
+Variable.UDT.uIssueDrop.Define("WO_SEQ",String,"WO_SEQ")
+Variable.UDT.uIssueDrop.Define("WO_DUE_DATE",Date,"WO_DUE_DATE")
+Variable.UDT.uIssueDrop.Define("SO",String,"SO")
+Variable.UDT.uIssueDrop.Define("SO_LINE",String,"SO_LINE")
+Variable.UDT.uIssueDrop.Define("USER_ID",String,"USER_ID")
+Variable.UDT.uIssueDrop.Define("CUSTOMER",String,"CUSTOMER")
+Variable.UDT.uIssueDrop.Define("CUSTOMER_NAME",String,"CUSTOMER_NAME")
+Variable.UDT.uIssueDrop.Define("CUST_PART",String,"CUST_PART")
+Variable.UDT.uIssueDrop.Define("CUST_PO_FROM_SO",String,"CUST_PO_FROM_SO")
+Variable.UDT.uIssueDrop.Define("BIN_DEFAULT",String)
+Variable.UDT.uIssueDrop.Define("TEXT_INFO1",String)
+Variable.UDT.uIssueDrop.Define("PART_MFG",String)
+Variable.UDT.uIssueDrop.Define("QTY_PER",String)
+Variable.uGlobal.uIssueDrop.Declare("uIssueDrop")
+Variable.Global.bSentinel.Declare(Boolean,False)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+F.Intrinsic.Control.CallSub(Loaddata)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_SF_Issue_Drop_Label.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.LoadData.Start
+F.Intrinsic.Control.SetErrorHandler("LoadData_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSql.Declare(String)
+V.Local.iUB.Declare(Long)
+
+V.Local.i.Declare(Long)
+V.Local.ii.Declare(Long)
+V.Local.iii.Declare(Long)
+V.Local.sRet.Declare(String)
+V.Local.sRetValues.Declare(String)
+
+'Getting run ID passed down
+V.Global.iBIRunID.Set(V.Passed.DATA-GAB-0)
+'Getting log ID passed down
+V.Global.iBILogID.Set(V.Passed.DATA-GAB-1)
+'Getting Sentinel flag passed down
+Variable.Global.bSentinel.Set(V.Passed.DATA-GAB-2)
+
+V.uGlobal.uIssueDrop.Redim(-1,-1)
+
+'Loading data from Y table, as being label being printed from Menu, Selecting all fields as all fields are transferred over from Y table to Z table
+F.Intrinsic.String.Build("Select * From Y_SF_ISSUE_DROP where RUNID = {0}",V.Global.iBIRunID,V.Local.sSql)
+F.ODBC.Connection!con.OpenLocalRecordsetRO("rst",V.Local.sSql)
+F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","V.uGlobal.uIssueDrop",True,0)
+F.ODBC.con!rst.Close
+
+F.Intrinsic.Control.If(V.uGlobal.uIssueDrop.UBound,>,-1)
+    'Checking to see if sequence being printed is Codesoft label
+    Function.Intrinsic.Control.If(Variable.Global.bSentinel,=,True)
+        'Stopping Logging
+        F.Global.BI.StopLogging(V.Global.iBILogID)
+
+'Lookup part default bin and text info1
+Function.Intrinsic.Control.For(V.Local.i,0,V.uGlobal.uIssueDrop.UBound,1)
+	V.Local.sSQL.Set("select PART,LOCATION,BIN,TEXT_INFO1 FROM V_INVENTORY_ALL WHERE PART = '{0}' AND LOCATION = '{1}'")
+	Function.Intrinsic.String.Build(V.Local.sSQL,V.uGlobal.uIssueDrop(V.Local.i)!PART,V.uGlobal.uIssueDrop(V.Local.i)!LOCN,V.Local.sSQL)
+	Function.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sRet)
+	Function.Intrinsic.String.Split(V.Local.sRet,"#$#",V.Local.sRet)
+	Function.Intrinsic.Control.For(V.Local.ii,0,V.Local.sRet.UBound,1)
+		Function.Intrinsic.String.Split(V.Local.sRet(V.Local.ii),"*!*",V.Local.sRetValues)
+		F.Intrinsic.Control.If(V.Local.sRetvalues(0),<>,"")
+		Function.Intrinsic.Control.If(V.uGlobal.uIssueDrop(V.Local.i)!PART,=,V.Local.sRetValues(0).Trim)
+		Function.Intrinsic.Control.AndIf(V.uGlobal.uIssueDrop(V.Local.i)!LOCN,=,V.Local.sRetValues(1).Trim)
+			V.uGlobal.uIssueDrop(V.Local.i)!BIN_DEFAULT.Set(V.Local.sRetValues(2))	
+			V.uGlobal.uIssueDrop(V.Local.i)!TEXT_INFO1.Set(V.Local.sRetValues(3))
+		Function.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.endif
+	Function.Intrinsic.Control.Next(V.Local.ii)
+Function.Intrinsic.Control.Next(V.Local.i)
+
+'Lookup WO Mfg Part #
+Function.Intrinsic.Control.For(V.Local.i,0,V.uGlobal.uIssueDrop.UBound,1)
+	V.Local.sSQL.Set("select PART,LOCATION,JOB,SUFFIX FROM V_JOB_HEADER WHERE JOB = '{0}' AND SUFFIX = '{1}'")
+	Function.Intrinsic.String.Build(V.Local.sSQL,V.uGlobal.uIssueDrop(V.Local.i)!WO,V.uGlobal.uIssueDrop(V.Local.i)!WO_SUFFIX,V.Local.sSQL)
+	Function.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sRet)
+	Function.Intrinsic.String.Split(V.Local.sRet,"#$#",V.Local.sRet)
+	Function.Intrinsic.Control.For(V.Local.ii,0,V.Local.sRet.UBound,1)
+		Function.Intrinsic.String.Split(V.Local.sRet(V.Local.ii),"*!*",V.Local.sRetValues)
+		F.Intrinsic.Control.If(V.Local.sRetvalues(0),<>,"")
+		Function.Intrinsic.Control.If(V.uGlobal.uIssueDrop(V.Local.i)!WO,=,V.Local.sRetValues(2).Trim)
+		Function.Intrinsic.Control.AndIf(V.uGlobal.uIssueDrop(V.Local.i)!WO_SUFFIX,=,V.Local.sRetValues(3).Trim)
+			V.uGlobal.uIssueDrop(V.Local.i)!PART_MFG.Set(V.Local.sRetValues(0))	
+		Function.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.endif
+	Function.Intrinsic.Control.Next(V.Local.ii)
+Function.Intrinsic.Control.Next(V.Local.i)
+
+'Lookup Qty of material needed to make 1 mfg part
+Function.Intrinsic.Control.For(V.Local.i,0,V.uGlobal.uIssueDrop.UBound,1)
+	V.Local.sSQL.Set("select JOB,SUFFIX,SEQ,UNITS FROM V_JOB_OPERATIONS WHERE JOB = '{0}' AND SUFFIX = '{1}' AND SEQ = '{2}'")
+	Function.Intrinsic.String.Build(V.Local.sSQL,V.uGlobal.uIssueDrop(V.Local.i)!WO,V.uGlobal.uIssueDrop(V.Local.i)!WO_SUFFIX,V.uGlobal.uIssueDrop(V.Local.i)!WO_SEQ,V.Local.sSQL)
+	Function.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sRet)
+	Function.Intrinsic.String.Split(V.Local.sRet,"#$#",V.Local.sRet)
+	Function.Intrinsic.Control.For(V.Local.ii,0,V.Local.sRet.UBound,1)
+		Function.Intrinsic.String.Split(V.Local.sRet(V.Local.ii),"*!*",V.Local.sRetValues)
+		F.Intrinsic.Control.If(V.Local.sRetvalues(0),<>,"")
+		Function.Intrinsic.Control.If(V.uGlobal.uIssueDrop(V.Local.i)!WO,=,V.Local.sRetValues(0).Trim)
+		Function.Intrinsic.Control.AndIf(V.uGlobal.uIssueDrop(V.Local.i)!WO_SUFFIX,=,V.Local.sRetValues(1).Trim)
+		Function.Intrinsic.Control.AndIf(V.uGlobal.uIssueDrop(V.Local.i)!WO_SEQ,=,V.Local.sRetValues(2).Trim)
+			V.uGlobal.uIssueDrop(V.Local.i)!QTY_PER.Set(V.Local.sRetValues(3))	
+		Function.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.endif
+	Function.Intrinsic.Control.Next(V.Local.ii)
+Function.Intrinsic.Control.Next(V.Local.i)
+
+
+        'Printing Codesoft label
+        F.Global.BI.PrintCodesoftLabelFromUDT(V.Global.iBIRunID,V.Global.iBILogID,"uGlobal.uIssueDrop","","",True)
+    Function.Intrinsic.Control.Else
+        'Setting field refs of UDT for Z table fields that don't match Y table field names
+        F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uIssueDrop!BIRUNID,"BIRUNID")
+
+        'Opening table and writing data out for Crystal/Bartender
+        F.ODBC.Connection!con.OpenLocalRecordsetRW("rst","Z_SF_ISSUE_DROP")
+        F.Intrinsic.Variable.saveudttorecordset("con","rst","v.uglobal.uIssueDrop")
+        F.ODBC.con!rst.Close
+
+        'Stopping Logging
+        F.Global.BI.StopLogging(V.Global.iBILogID)
+
+        'Printing Crystal Report
+        F.Intrinsic.Control.CallSub(Callbi)
+    Function.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+Function.Intrinsic.Control.CallSub(Unload)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("LoadData_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_SF_Issue_Drop_Label.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.LoadData.End
+
+Program.Sub.CallBI.Start
+F.Intrinsic.Control.SetErrorHandler("CallBI_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.iRet.Declare(Long)
+
+F.Global.BI.RunReportPreProcessor(V.Global.iBIRunID,V.Global.iBILogID,"","","",-1,True,"",-1,"",-1,"","",v.Local.iRet)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("CallBI_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_SF_Issue_Drop_Label.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.CallBI.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("Unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.ODBC.Connection!con.Close
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: BIR_SF_Issue_Drop_Label.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Unload.End
+
+Program.Sub.Comments.Start
+${$0$}$SF_Issue_Drop$}$Mitch$}$4/3/2014
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$Issue/Drop Material label
+Program.Sub.Comments.End
+
